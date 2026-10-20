@@ -7,6 +7,8 @@ const db = require('./db');
 const { requireAuth } = require('./auth');
 
 const app = express();
+// Escape HTML-sensitive characters in every JSON response without changing its data.
+app.set('json escape', true);
 app.use(helmet());
 app.use(express.json({ limit: '32kb' }));
 
