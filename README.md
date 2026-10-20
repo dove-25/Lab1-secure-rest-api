@@ -145,3 +145,7 @@ git push -u origin main
 Express 没有内置 `escape()`。这里按 JSON 输出上下文使用框架自带的 `json escape`，而不是把资料预先转换成 HTML 实体。JSON 解析后仍会还原原始字符串；前端显示资料时应使用 `textContent` 或模板框架的默认文本插值，不能直接放入 `innerHTML`。此输出编码不等同于允许富文本输入的 HTML 清洗器。
 
 新增测试把含 `<img ... onerror=...>` 的资料写入测试内存数据库，再通过真实登录访问两个受保护接口，检查原始 HTTP 响应的 Unicode 转义、JSON 类型和 `nosniff`，同时验证解析后的数据保持原值。另有测试检查数据库中的 bcrypt 哈希和成本因子。全部测试可用 `npm.cmd test` 运行。
+
+## CI 安全扫描
+
+每次 push 和 pull request 自动运行接口测试、ESLint、CodeQL SAST、npm audit 与 OWASP Dependency-Check。扫描器会生成可下载报告；详细操作、无 NVD Key 运行方式和截图指引见 [CI_SECURITY_GUIDE.md](CI_SECURITY_GUIDE.md)。

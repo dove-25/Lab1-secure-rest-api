@@ -2,30 +2,160 @@ name: Secure API CI
 
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
+    name: Tests and lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
+          registry-url: https://registry.npmjs.org
       - name: Install dependencies
         run: npm ci
-
-      - name: Run tests
+      - name: Run API tests
         run: npm test
-
-      - name: Run ESLint SAST baseline
+      - name: Run ESLint
         run: npm run lint
 
-      - name: Run dependency audit
-        run: npm audit --audit-level=high
+  sast:
+    name: SAST CodeQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize JavaScript analysis
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          queries: security-extended
+      - name: Analyze source and publish security alerts
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
+          output: reports/codeql
+      - name: Upload SAST SARIF report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-codeql-report
+          path: reports/codeql/*.sarif
+          if-no-files-found: warn
+          retention-days: 14
+
+  npm-audit:
+    name: SCA npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Install dependency graph without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Audit all dependencies and generate JSON report
+        run: |
+          mkdir -p reports/npm-audit
+          npm audit --registry=https://registry.npmjs.org --audit-level=high --json > reports/npm-audit/npm-audit.json
+      - name: Upload dependency audit report even on findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-npm-audit-report
+          path: reports/npm-audit/
+          if-no-files-found: warn
+          retention-days: 14
+
+  dependency-check:
+    name: SCA OWASP Dependency Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DC_VERSION: '13.0.0'
+      DC_SHA256: 44d920d1ec03e948df862a253f0912782a31b9beee8a7c8895b9cb95760176ed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies for component identification
+        run: npm ci --ignore-scripts
+      - name: Restore vulnerability database cache
+        id: dc-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/dependency-check-data
+          key: dependency-check-v13-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: dependency-check-v13-${{ runner.os }}-
+      - name: Download and verify official OWASP scanner
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/dependency-check/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip" \
+            --output "$RUNNER_TEMP/dependency-check.zip"
+          echo "$DC_SHA256  $RUNNER_TEMP/dependency-check.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/dependency-check.zip" -d "$RUNNER_TEMP/owasp"
+          chmod +x "$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh"
+      - name: Scan dependencies and generate HTML and JSON reports
+        id: owasp-scan
+        shell: bash
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          mkdir -p reports/dependency-check
+          nvd_args=()
+          if [[ -n "$NVD_API_KEY" ]]; then
+            nvd_args+=(--nvdApiKey "$NVD_API_KEY")
+          else
+            echo "::warning::NVD_API_KEY is not configured; initial vulnerability database sync can be slow or rate-limited."
+          fi
+          "$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh" \
+            --project "Lab1 Secure REST API" \
+            --scan "$GITHUB_WORKSPACE/package-lock.json" \
+            --scan "$GITHUB_WORKSPACE/node_modules" \
+            --data "$RUNNER_TEMP/dependency-check-data" \
+            --out "$GITHUB_WORKSPACE/reports/dependency-check" \
+            --format HTML --format JSON \
+            --failOnCVSS 7 \
+            --disableAssembly \
+            "${nvd_args[@]}"
+      - name: Save vulnerability database for later runs
+        if: always() && steps.owasp-scan.outcome != 'skipped' && steps.dc-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/dependency-check-data
+          key: ${{ steps.dc-cache.outputs.cache-primary-key }}
+      - name: Upload OWASP reports even when vulnerabilities are found
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-owasp-dependency-check-report
+          path: reports/dependency-check/
+          if-no-files-found: warn
+          retention-days: 14
