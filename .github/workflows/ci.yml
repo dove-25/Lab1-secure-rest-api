@@ -54,7 +54,7 @@ jobs:
           output: reports/codeql
       - name: Upload SAST SARIF report
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sast-codeql-report
           path: reports/codeql/*.sarif
@@ -80,7 +80,7 @@ jobs:
           npm audit --registry=https://registry.npmjs.org --audit-level=high --json > reports/npm-audit/npm-audit.json
       - name: Upload dependency audit report even on findings
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sca-npm-audit-report
           path: reports/npm-audit/
@@ -165,7 +165,7 @@ jobs:
           key: ${{ steps.dc-cache.outputs.cache-primary-key }}
       - name: Upload OWASP reports even when vulnerabilities are found
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: sca-owasp-dependency-check-report
           path: reports/dependency-check/

@@ -57,3 +57,27 @@ NVD 漏洞数据库会缓存以减少重复下载。来自 fork 的 pull request
 3. 展开 CodeQL 分析步骤，并截取 Security → Code scanning 的结果；没有告警时保留完整扫描记录。
 4. 截取 OWASP 扫描步骤与 Artifacts 列表，再截图下载的 HTML 报告摘要，包括扫描时间、依赖数量和漏洞数量。
 5. 对 npm audit 保留漏洞摘要和修复前后对比。Secret 的配置只截图名称，绝不展示密钥值。
+
+
+## 报告上传步骤的 Node.js 20 弃用警告处理
+
+2026年10月20日，运行 39367469849 虽然四个作业全部成功，仍在 npm audit、CodeQL 和 OWASP 作业中各出现一条 Node.js 20 弃用警告。三条警告来自同一个共享组件：`actions/upload-artifact@v5`，并不是三个扫描器分别存在运行错误。
+
+官方 v5 的 action.yml 声明 `runs.using: node20`。GitHub 已将此类 Action 强制切换到 Node.js 24，因此提示原运行时弃用。项目的 `actions/setup-node` 配置 `node-version: 22` 只负责测试和 npm 命令，不能改变 Action 自身的运行时。此前扫描和报告上传成功，但需要升级上传组件，避免长期依赖平台的兼容迁移。
+
+处理步骤如下。
+
+1. 核对官方 v5 和 v6 的 action.yml，确认 v5 使用 node20、v6 使用 node24。
+2. 将 ci.yml 中三个 `uses: actions/upload-artifact@v5` 全部改为 `uses: actions/upload-artifact@v6`，对应 CodeQL、npm audit 和 OWASP 三份报告。
+3. 保留报告名称、路径、14 天保留期、失败时仍尝试上传的条件，以及项目 Node.js 22 和扫描器配置。
+4. 用 Actionlint 检查工作流，提交并推送到 main，触发新运行。
+5. 等待四个作业完成，逐项读取 GitHub 的 Checks 注释，确认不再出现该弃用警告；同时确认三份报告附件均上传成功。最终结果及运行链接见后续验证记录。
+
+v6 要求 Actions Runner 至少为 2.327.1；本项目使用 GitHub 托管 ubuntu-24.04 runner，由 GitHub 管理运行器更新。如果以后改用自托管 runner，应先核查其版本。
+
+官方依据：
+- v5 运行时声明：https://github.com/actions/upload-artifact/blob/v5/action.yml
+- v6 运行时声明：https://github.com/actions/upload-artifact/blob/v6/action.yml
+- v6 官方发布说明：https://github.com/actions/upload-artifact/releases/tag/v6.0.0
+
+旧运行记录的注释会永久保留，升级只影响新运行。验收截图应使用修复后的运行，不应要求旧运行的三条历史注释消失。
