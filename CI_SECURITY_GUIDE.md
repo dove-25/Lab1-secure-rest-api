@@ -2,7 +2,7 @@
 
 ## 当前配置
 
-工作流为 `.github/workflows/ci.yml`，名称 Security Scan，仅一个作业 `security-scan`。每次 push、创建或更新 pull request 自动运行，也可手动触发。
+工作流为 `.github/workflows/ci.yml`，名称 security scanning，仅一个作业 `security-scan`。每次 push、创建或更新 pull request 自动运行，也可手动触发。
 
 按题目列出的工具顺序执行两项检查：
 
@@ -15,7 +15,7 @@ Node.js、Java 和漏洞数据库缓存是运行扫描器的准备步骤。Java 
 
 ## 查看和截图
 
-进入仓库 Actions → Security Scan → 最新成功运行，打开唯一的 `security-scan` 作业，截图保留两个扫描步骤的绿色状态。这就是与示例图相同的单作业展示方式。
+进入仓库 Actions → security scanning → 最新成功运行，打开唯一的 `security-scan` 作业，截图保留两个扫描步骤的绿色状态。这就是与示例图相同的单作业展示方式。
 
 运行页面底部下载 `security-reports` 附件，解压后打开 `dependency-check-report.html`，截图 OWASP 摘要；用编辑器打开 `npm-audit.json`，查看 metadata.vulnerabilities 中的 high 和 critical。按实际报告描述结果，检查通过不等于所有等级漏洞均为零。
 
