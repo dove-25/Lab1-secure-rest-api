@@ -134,3 +134,14 @@ git push -u origin main
 ```
 
 推送需要网络连接及当前机器上的 GitHub 仓库访问权限。
+
+## 安全要求实现
+
+- **SQL 注入防护**：所有涉及用户数据的查询和写入都通过 `db.prepare()` 与 `?` 占位符绑定参数，不拼接用户输入。建表语句是固定 SQL。
+- **用户数据输出转义**：Express 启用 `app.set('json escape', true)`，对所有 `res.json()` 输出中的 `<`、`>`、`&` 统一编码为 `\u003c`、`\u003e`、`\u0026`，覆盖用户名称和个人资料中的字符串。框架同时完成引号、反斜杠等 JSON 语法字符的编码。
+- **认证**：登录成功签发带有效期的 HS256 JWT；`/api/data` 和 `/api/profile` 均使用 `requireAuth` 校验签名、有效期、算法和用户声明。缺失、伪造、过期 Token 返回 401。
+- **密码存储**：SQLite 只保存 bcrypt 哈希；演示账户使用成本因子 12，登录时使用 bcrypt 比较，接口不返回密码哈希。
+
+Express 没有内置 `escape()`。这里按 JSON 输出上下文使用框架自带的 `json escape`，而不是把资料预先转换成 HTML 实体。JSON 解析后仍会还原原始字符串；前端显示资料时应使用 `textContent` 或模板框架的默认文本插值，不能直接放入 `innerHTML`。此输出编码不等同于允许富文本输入的 HTML 清洗器。
+
+新增测试把含 `<img ... onerror=...>` 的资料写入测试内存数据库，再通过真实登录访问两个受保护接口，检查原始 HTTP 响应的 Unicode 转义、JSON 类型和 `nosniff`，同时验证解析后的数据保持原值。另有测试检查数据库中的 bcrypt 哈希和成本因子。全部测试可用 `npm.cmd test` 运行。
