@@ -24,7 +24,7 @@
 1. 打开 https://nvd.nist.gov/developers/request-an-api-key ，填写邮箱等申请信息，按邮件指引完成激活。
 2. 打开仓库 Settings → Secrets and variables → Actions → New repository secret。
 3. Name 填写 `NVD_API_KEY`；Secret 填写你的密钥，点击 Add secret。不要提交到 .env.example、代码或实验报告，也不要把密钥发到聊天中。
-4. 未配置密钥时，工作流仍会尝试无密钥同步，不会跳过 OWASP 扫描；但首次同步可能很慢或受到 NVD 限流。配置密钥后可重跑失败作业。
+4. 未配置密钥时，工作流通过 `--nvdDatafeed` 读取 NVD 官方公开 CVE 2.0 数据文件，不会跳过 OWASP 扫描。首次同步仍可能较慢，后续使用缓存。此方式也避免 Dependency-Check 13.0.0 将默认空密钥传给 NVD API 的问题。配置有效密钥后则使用 API 模式。
 
 NVD 漏洞数据库会缓存以减少重复下载。来自 fork 的 pull request 通常拿不到仓库 Secret，此时按无 Key 路径运行。此项目使用 pull_request，不使用会对外部代码授予更高权限的 pull_request_target。
 

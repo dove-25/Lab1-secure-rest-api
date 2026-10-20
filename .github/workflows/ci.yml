@@ -133,7 +133,8 @@ jobs:
           if [[ -n "$NVD_API_KEY" ]]; then
             nvd_args+=(--nvdApiKey "$NVD_API_KEY")
           else
-            echo "::warning::NVD_API_KEY is not configured; initial vulnerability database sync can be slow or rate-limited."
+            echo "Using the official public NVD CVE 2.0 data feeds without an API key."
+            nvd_args+=(--nvdDatafeed 'https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{0}.json.gz')
           fi
           set +e
           "$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh" \
