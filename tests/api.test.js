@@ -5,6 +5,7 @@ const request = require('supertest');
 const app = require('../src/app');
 const jwt = require('jsonwebtoken');
 const db = require('../src/db');
+const bcrypt = require('bcryptjs');
 
 afterAll(() => db.close());
 
@@ -87,6 +88,48 @@ describe('secure API', () => {
       const response = await request(app).get(endpoint).set('Authorization', header);
       expect(response.status).toBe(401);
       expect(response.body.error).toEqual(expect.any(String));
+    }
+  });
+
+  test('stores a salted bcrypt hash rather than the plaintext password', () => {
+    const user = db.prepare('SELECT password_hash FROM users WHERE username = ?').get('alice');
+    expect(user.password_hash).not.toBe('ChangeMe123!');
+    expect(bcrypt.getRounds(user.password_hash)).toBe(12);
+    expect(bcrypt.compareSync('ChangeMe123!', user.password_hash)).toBe(true);
+    expect(bcrypt.compareSync('incorrect', user.password_hash)).toBe(false);
+  });
+
+  test.each(['/api/data', '/api/profile'])('escapes stored user content in %s JSON', async (endpoint) => {
+    const malicious = '<img src=x onerror=alert(1)>&';
+    const hash = db.prepare('SELECT password_hash FROM users WHERE username = ?').get('alice').password_hash;
+    const inserted = db.prepare(`
+      INSERT INTO users (username, password_hash, display_name, email, bio, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(malicious, hash, malicious, malicious, malicious, malicious);
+    try {
+      const login = await request(app).post('/auth/login')
+        .send({ login: malicious, password: 'ChangeMe123!' });
+      expect(login.status).toBe(200);
+      const response = await request(app).get(endpoint)
+        .set('Authorization', `Bearer ${login.body.token}`);
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toMatch(/^application\/json/);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.text).not.toMatch(/[<>&]/);
+      expect(response.text).toContain('\\u003c');
+      expect(response.text).toContain('\\u003e');
+      expect(response.text).toContain('\\u0026');
+      if (endpoint === '/api/data') {
+        expect(response.body.user).toBe(malicious);
+      } else {
+        for (const field of ['username', 'displayName', 'email', 'bio', 'createdAt']) {
+          expect(response.body.profile[field]).toBe(malicious);
+        }
+        expect(response.body.profile.password_hash).toBeUndefined();
+        expect(response.body.profile.passwordHash).toBeUndefined();
+      }
+    } finally {
+      db.prepare('DELETE FROM users WHERE id = ?').run(inserted.lastInsertRowid);
     }
   });
 
