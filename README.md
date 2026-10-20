@@ -148,4 +148,4 @@ Express 没有内置 `escape()`。这里按 JSON 输出上下文使用框架自�
 
 ## CI 安全扫描
 
-每次 push 和 pull request 自动运行接口测试、ESLint、CodeQL SAST、npm audit 与 OWASP Dependency-Check。扫描器会生成可下载报告；详细操作、无 NVD Key 运行方式和截图指引见 [CI_SECURITY_GUIDE.md](CI_SECURITY_GUIDE.md)。
+每次 push 和 pull request 自动运行一个 `security-scan` 作业，依次执行题目指定的 npm audit 和 OWASP Dependency-Check，统一上传 `security-reports` 报告。查看与截图步骤见 [CI_SECURITY_GUIDE.md](CI_SECURITY_GUIDE.md)。接口测试和 lint 可在本地执行。
