@@ -1,5 +1,5 @@
-name: security scan
-run-name: security scan
+name: Security scan
+run-name: Security scan
 
 on:
   push:
@@ -20,19 +20,18 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup npm
-        run: npm install --global npm@11.21.1 --ignore-scripts --no-audit --no-fund
-
       - name: Install dependencies
         id: install
-        run: npm ci --ignore-scripts --no-audit
+        run: |
+          npm install --global npm@11.21.1 --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit
 
-      - name: npm audit
+      - name: Run SAST npm audit scan
         run: |
           mkdir -p reports
           npm audit --registry=https://registry.npmjs.org --audit-level=moderate --json > reports/npm-audit.json
 
-      - name: OWASP Dependency-Check
+      - name: Run SCA OWASP Dependency-Check
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         uses: dependency-check/Dependency-Check_Action@main
         env:
