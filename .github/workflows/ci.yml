@@ -41,7 +41,13 @@ jobs:
           path: package-lock.json
           format: HTML
           out: reports/owasp
-          args: --failOnCVSS 7
+          # npm audit above checks all dependencies, including development tools.
+          # OWASP checks production dependencies; Sonatype is not configured.
+          args: >-
+            --failOnCVSS 7
+            --nodePackageSkipDevDependencies
+            --nodeAuditSkipDevDependencies
+            --disableOssIndex
 
       - name: Upload scan reports
         if: always()
