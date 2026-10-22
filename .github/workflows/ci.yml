@@ -23,6 +23,12 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Setup npm with bulk advisory support
+        run: |
+          npm install --global npm@11.21.1 --ignore-scripts --no-audit --no-fund
+          node --version
+          npm --version
+
       - name: Setup Java for OWASP scanner
         uses: actions/setup-java@v5
         with:
@@ -31,46 +37,60 @@ jobs:
 
       - name: Install dependencies
         id: install
-        run: npm ci --ignore-scripts
+        run: npm ci --ignore-scripts --no-audit
 
       - name: Restore vulnerability database
-        uses: actions/cache@v5
+        id: dc-cache
+        uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/dependency-check-data
-          key: dependency-check-v13-${{ runner.os }}-${{ github.run_id }}
+          key: dependency-check-v13-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: dependency-check-v13-${{ runner.os }}-
 
       - name: Run full dependency npm audit scan
         run: |
           mkdir -p reports
-          npm audit --registry=https://registry.npmjs.org --audit-level=moderate --json > reports/npm-audit.json
+          npm audit --registry=https://registry.npmjs.org --audit-level=moderate \
+            --fetch-retries=2 --fetch-timeout=60000 --json > reports/npm-audit.json
 
       - name: Run SCA OWASP Dependency-Check
+        id: owasp
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: |
-          curl --fail --location --retry 3 \
+          curl --fail --location --retry 3 --retry-all-errors \
+            --connect-timeout 30 --max-time 300 \
             https://github.com/dependency-check/DependencyCheck/releases/download/v13.0.0/dependency-check-13.0.0-release.zip \
             --output "$RUNNER_TEMP/dependency-check.zip"
           echo "44d920d1ec03e948df862a253f0912782a31b9beee8a7c8895b9cb95760176ed  $RUNNER_TEMP/dependency-check.zip" | sha256sum --check
           unzip -q "$RUNNER_TEMP/dependency-check.zip" -d "$RUNNER_TEMP/owasp"
           chmod +x "$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh"
           mkdir -p reports
+          scanner="$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh"
+          bash .github/scripts/update-vulnerability-db.sh \
+            "$scanner" "$RUNNER_TEMP/dependency-check-data" "$GITHUB_WORKSPACE/reports"
+          echo "database_updated=true" >> "$GITHUB_OUTPUT"
           # npm audit above covers production AND development dependencies.
-          # Give OWASP a separate production install to avoid dev-only aliases
+          # OWASP scans a separate production install without dev-only aliases
           # and optional binaries for other operating systems/architectures.
           production_dir="$RUNNER_TEMP/owasp-production"
           mkdir -p "$production_dir"
           cp package.json package-lock.json "$production_dir/"
-          npm ci --omit=dev --ignore-scripts --prefix "$production_dir"
-          "$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh" \
+          npm ci --omit=dev --ignore-scripts --no-audit --prefix "$production_dir"
+          "$scanner" \
             --project "Lab1 Secure REST API" \
             --scan "$production_dir/package-lock.json" --scan "$production_dir/node_modules" \
-            --data "$RUNNER_TEMP/dependency-check-data" \
-            --nvdDatafeed 'https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{0}.json.gz' \
+            --data "$RUNNER_TEMP/dependency-check-data" --noupdate \
             --out reports --format HTML --format JSON \
             --log reports/dependency-check.log \
             --failOnCVSS 7 --disableAssembly --disableOssIndex \
             --nodePackageSkipDevDependencies --nodeAuditSkipDevDependencies
+
+      - name: Save successfully updated vulnerability database
+        if: ${{ !cancelled() && steps.owasp.outputs.database_updated == 'true' && steps.dc-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/dependency-check-data
+          key: ${{ steps.dc-cache.outputs.cache-primary-key }}
 
       - name: Upload scan reports
         if: always()
