@@ -40,10 +40,10 @@ jobs:
           key: dependency-check-v13-${{ runner.os }}-${{ github.run_id }}
           restore-keys: dependency-check-v13-${{ runner.os }}-
 
-      - name: Run SAST npm audit scan
+      - name: Run full dependency npm audit scan
         run: |
           mkdir -p reports
-          npm audit --registry=https://registry.npmjs.org --audit-level=high --json > reports/npm-audit.json
+          npm audit --registry=https://registry.npmjs.org --audit-level=moderate --json > reports/npm-audit.json
 
       - name: Run SCA OWASP Dependency-Check
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
@@ -55,14 +55,22 @@ jobs:
           unzip -q "$RUNNER_TEMP/dependency-check.zip" -d "$RUNNER_TEMP/owasp"
           chmod +x "$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh"
           mkdir -p reports
+          # npm audit above covers production AND development dependencies.
+          # Give OWASP a separate production install to avoid dev-only aliases
+          # and optional binaries for other operating systems/architectures.
+          production_dir="$RUNNER_TEMP/owasp-production"
+          mkdir -p "$production_dir"
+          cp package.json package-lock.json "$production_dir/"
+          npm ci --omit=dev --ignore-scripts --prefix "$production_dir"
           "$RUNNER_TEMP/owasp/dependency-check/bin/dependency-check.sh" \
             --project "Lab1 Secure REST API" \
-            --scan package-lock.json --scan node_modules \
+            --scan "$production_dir/package-lock.json" --scan "$production_dir/node_modules" \
             --data "$RUNNER_TEMP/dependency-check-data" \
             --nvdDatafeed 'https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{0}.json.gz' \
             --out reports --format HTML --format JSON \
             --log reports/dependency-check.log \
-            --failOnCVSS 7 --disableAssembly
+            --failOnCVSS 7 --disableAssembly --disableOssIndex \
+            --nodePackageSkipDevDependencies --nodeAuditSkipDevDependencies
 
       - name: Upload scan reports
         if: always()
